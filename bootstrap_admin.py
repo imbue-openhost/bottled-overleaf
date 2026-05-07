@@ -110,32 +110,39 @@ def _run_create_user(email: str) -> str:
             f"create-user.mjs exited {proc.returncode}; output:\n{output}"
         )
 
-    # The script prints a "Please visit the following URL ..."
-    # block followed by the URL on its own line.  Match the URL.
+    # Overleaf 5.x prints a "Please visit the following URL ..."
+    # block followed by an activation URL with the shape
+    #   https://<host>/user/activate?token=<hex>&user_id=<oid>
+    # (older Overleaf 4.x used /user/password/set?passwordResetToken=...).
+    # Match either; the activation flow is the modern one.
     m = re.search(
-        r"https?://[^\s]+/user/password/set\?[^\s]+",
+        r"https?://[^\s]+/user/activate\?token=[a-zA-Z0-9._-]+(?:&[^\s]+)?",
         output,
     )
     if not m:
-        # Fallback: maybe Overleaf changed the URL shape.  Try a
-        # broader match: any URL with a passwordResetToken query.
         m = re.search(
-            r"https?://[^\s]*passwordResetToken=[a-zA-Z0-9._-]+[^\s]*",
+            r"https?://[^\s]+/user/password/set\?[^\s]+",
+            output,
+        )
+    if not m:
+        m = re.search(
+            r"https?://[^\s]*(?:passwordResetToken|token)=[a-zA-Z0-9._-]+[^\s]*",
             output,
         )
     if not m:
         raise RuntimeError(
-            f"create-user.mjs did not print a password-reset URL.  "
-            f"Output:\n{output}"
+            f"create-user.mjs did not print a password-reset / "
+            f"activation URL.  Output:\n{output}"
         )
     url = m.group(0)
     qs = urllib.parse.parse_qs(urllib.parse.urlparse(url).query)
-    token_list = qs.get("passwordResetToken", [])
-    if not token_list:
-        raise RuntimeError(
-            f"password-reset URL is missing passwordResetToken query: {url}"
-        )
-    return token_list[0]
+    # Activation URL uses "token"; legacy uses "passwordResetToken".
+    for key in ("token", "passwordResetToken"):
+        if key in qs and qs[key]:
+            return qs[key][0]
+    raise RuntimeError(
+        f"URL is missing token / passwordResetToken query: {url}"
+    )
 
 
 def _set_password(token: str, password: str) -> None:
