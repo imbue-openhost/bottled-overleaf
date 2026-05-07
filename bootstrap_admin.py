@@ -185,6 +185,37 @@ def _set_password(token: str, password: str) -> None:
         )
 
 
+def _delete_user_if_exists(email: str) -> None:
+    """Drop any existing user row with the given email so we can
+    re-run the create-user.mjs script idempotently.
+
+    Uses mongosh against the local Mongo replica set.  Best-effort:
+    if mongosh is missing or the deletion fails, we let create-user.mjs
+    surface the error.
+    """
+    e = email.replace("'", "\\'")
+    cmd = [
+        "mongosh",
+        "--quiet",
+        "mongodb://127.0.0.1:27017/sharelatex",
+        "--eval",
+        f"db.users.deleteOne({{ email: '{e}' }})",
+    ]
+    try:
+        out = subprocess.check_output(cmd, stderr=subprocess.STDOUT, text=True, timeout=15)
+        print(f"[bootstrap] Deleted any existing user with email {email}: {out.strip()}")
+    except subprocess.CalledProcessError as exc:
+        print(
+            f"[bootstrap] WARNING: could not delete pre-existing user "
+            f"{email}: {exc.output.strip() if exc.output else exc}",
+            file=sys.stderr,
+        )
+    except FileNotFoundError:
+        # mongosh not in PATH; skip the cleanup.  create-user.mjs
+        # will then fail with "user already exists" if applicable.
+        pass
+
+
 def main() -> int:
     if os.path.exists(CRED_FILE):
         print(f"[bootstrap] {CRED_FILE} exists; skipping admin creation")
@@ -192,6 +223,11 @@ def main() -> int:
 
     print("[bootstrap] Waiting for Overleaf web service to be ready")
     _wait_for_overleaf_ready()
+
+    # Drop any prior user row with the same email so create-user.mjs
+    # doesn't bail with "Email already registered".  Single-tenant
+    # deploy: the only user is the admin we re-create here.
+    _delete_user_if_exists(ADMIN_EMAIL)
 
     password = _generate_password()
     token = _run_create_user(ADMIN_EMAIL)
