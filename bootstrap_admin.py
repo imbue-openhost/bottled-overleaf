@@ -145,15 +145,85 @@ def _run_create_user(email: str) -> str:
     )
 
 
+def _harvest_csrf(activation_url_token: str) -> tuple[str, str]:
+    """GET /user/activate?token=<token>&user_id=<oid> to harvest a
+    CSRF token + the matching session cookie.
+
+    Overleaf's set-password POST is CSRF-protected; the token is
+    embedded in the activation page's HTML as a <meta
+    name="ol-csrfToken" content="..."> tag, and the matching
+    session cookie (overleaf.sid) is set in the response headers.
+    Both must be sent together on the subsequent POST.
+
+    We need user_id too — pass the FULL activation URL query
+    string in the GET so Overleaf treats this as a legitimate
+    activation flow.
+
+    Returns (csrf_token, session_cookie_header).
+    """
+    # We were given just the token value; reconstruct the full
+    # /user/activate URL.  Overleaf accepts "token" as the only
+    # query param; user_id is optional.
+    url = f"{OVERLEAF}/user/activate?token={urllib.parse.quote(activation_url_token)}"
+    req = urllib.request.Request(url, headers={"Accept": "text/html"})
+    opener = urllib.request.build_opener(_NoRedirect())
+    try:
+        resp = opener.open(req, timeout=15)
+        status = resp.status
+        body = resp.read().decode("utf-8", errors="replace")
+        set_cookie = resp.headers.get("Set-Cookie") or ""
+    except urllib.error.HTTPError as exc:
+        status = exc.code
+        body = ""
+        try:
+            body = exc.read().decode("utf-8", errors="replace")
+        except Exception:  # noqa: BLE001
+            pass
+        set_cookie = exc.headers.get("Set-Cookie") if exc.headers else ""
+    if status != 200:
+        raise RuntimeError(
+            f"GET /user/activate returned {status}; body excerpt: {body[:200]!r}"
+        )
+
+    m = re.search(
+        r'<meta\s+name=["\']ol-csrfToken["\']\s+content=["\']([^"\']+)["\']',
+        body,
+    )
+    if not m:
+        raise RuntimeError(
+            f"no ol-csrfToken meta tag in /user/activate HTML; "
+            f"excerpt: {body[:300]!r}"
+        )
+    csrf_token = m.group(1)
+
+    # Pull the overleaf.sid cookie out of Set-Cookie.
+    sid_pair = None
+    for cookie_str in (set_cookie or "").split(", "):
+        head = cookie_str.split(";", 1)[0].strip()
+        if head.startswith("overleaf.sid="):
+            sid_pair = head
+            break
+    if sid_pair is None:
+        raise RuntimeError(
+            "GET /user/activate did not Set-Cookie overleaf.sid"
+        )
+    return csrf_token, sid_pair
+
+
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, *args, **kwargs):  # noqa: ARG002
+        return None
+
+
 def _set_password(token: str, password: str) -> None:
     """POST /user/password/set with the reset token.
 
-    Overleaf's set-password endpoint accepts JSON
-    ``{passwordResetToken, password}`` and returns 200 on
-    success.  No CSRF token required: passwordResetToken IS the
-    CSRF mechanism for this flow (single-use, server-side
-    bound).
+    Overleaf's set-password endpoint requires a CSRF token + the
+    matching session cookie (it's part of Overleaf's standard
+    csurf middleware on every authenticated POST).  We harvest
+    both from a prior GET /user/activate?token=<token>.
     """
+    csrf_token, sid_pair = _harvest_csrf(token)
     payload = json.dumps({
         "passwordResetToken": token,
         "password": password,
@@ -166,6 +236,9 @@ def _set_password(token: str, password: str) -> None:
             "Content-Type": "application/json",
             "Content-Length": str(len(payload)),
             "Accept": "application/json",
+            "Cookie": sid_pair,
+            "X-Csrf-Token": csrf_token,
+            "X-Forwarded-Proto": "https",
         },
     )
     try:
