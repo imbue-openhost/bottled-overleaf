@@ -60,7 +60,14 @@ def _generate_password() -> str:
 
 
 def _wait_for_overleaf_ready(retries: int = 240, delay: float = 1.0) -> None:
-    """Block until Overleaf's web service responds 2xx/3xx on /login."""
+    """Block until Overleaf's web service responds 2xx/3xx on /login.
+
+    /login is the lightest readiness probe — it doesn't touch the
+    History service or trigger global-blob loading.  We use a
+    deeper probe later (a probe GET on /user/activate with a
+    bogus token, expecting 4xx not 5xx) once we're ready to start
+    driving the activation flow.
+    """
     for i in range(retries):
         try:
             req = urllib.request.Request(f"{OVERLEAF}/login")
@@ -76,6 +83,33 @@ def _wait_for_overleaf_ready(retries: int = 240, delay: float = 1.0) -> None:
     raise RuntimeError(
         f"Overleaf /login did not respond within {retries * delay:.0f}s"
     )
+
+
+def _wait_for_activation_ready(retries: int = 60, delay: float = 2.0) -> None:
+    """Block until /user/activate stops returning 5xx.
+
+    On a freshly-started overleaf the activation handler 500s for
+    ~30-60s while HistoryManager.loadGlobalBlobs spins up against
+    Mongo.  We probe with a known-bad token (which after warmup
+    yields a 4xx 'invalid token' page rather than a 5xx 'Something
+    went wrong' page) before submitting the real activation URL.
+    """
+    probe = f"{OVERLEAF}/user/activate?token=warmup&user_id=warmup"
+    for _ in range(retries):
+        try:
+            req = urllib.request.Request(probe, headers={"Accept": "text/html"})
+            opener = urllib.request.build_opener(_NoRedirect())
+            try:
+                resp = opener.open(req, timeout=10)
+                status = resp.status
+            except urllib.error.HTTPError as exc:
+                status = exc.code
+            if status < 500:
+                return
+        except (OSError, urllib.error.URLError):
+            pass
+        time.sleep(delay)
+    # Fall through anyway; _harvest_csrf has its own retry loop.
 
 
 def _run_create_user(email: str) -> tuple[str, str]:
@@ -153,7 +187,7 @@ def _run_create_user(email: str) -> tuple[str, str]:
     return token, activation_path
 
 
-def _harvest_csrf(activation_path: str) -> tuple[str, str]:
+def _harvest_csrf(activation_path: str, retries: int = 30, delay: float = 2.0) -> tuple[str, str]:
     """GET <activation_path> (e.g. /user/activate?token=<...>&user_id=<oid>)
     to harvest a CSRF token + the matching session cookie.
 
@@ -163,43 +197,61 @@ def _harvest_csrf(activation_path: str) -> tuple[str, str]:
     session cookie (overleaf.sid) is set in the response headers.
     Both must be sent together on the subsequent POST.
 
+    Retries on 5xx because /user/activate transitively touches
+    the History service / global-blob bootstrap, which can throw
+    Mongo connect-timeout 500s for the first ~30s after web
+    starts even though /login is already serving.
+
     Returns (csrf_token, session_cookie_header).
     """
     url = f"{OVERLEAF}{activation_path}"
-    req = urllib.request.Request(url, headers={"Accept": "text/html"})
-    opener = urllib.request.build_opener(_NoRedirect())
-    try:
-        resp = opener.open(req, timeout=15)
-        status = resp.status
-        body = resp.read().decode("utf-8", errors="replace")
-        set_cookie = resp.headers.get("Set-Cookie") or ""
-    except urllib.error.HTTPError as exc:
-        status = exc.code
-        body = ""
+    last_status = 0
+    last_body = ""
+    last_set_cookie = ""
+    for attempt in range(retries):
+        req = urllib.request.Request(url, headers={"Accept": "text/html"})
+        opener = urllib.request.build_opener(_NoRedirect())
         try:
-            body = exc.read().decode("utf-8", errors="replace")
-        except Exception:  # noqa: BLE001
-            pass
-        set_cookie = exc.headers.get("Set-Cookie") if exc.headers else ""
-    if status != 200:
+            resp = opener.open(req, timeout=15)
+            status = resp.status
+            body = resp.read().decode("utf-8", errors="replace")
+            set_cookie = resp.headers.get("Set-Cookie") or ""
+        except urllib.error.HTTPError as exc:
+            status = exc.code
+            body = ""
+            try:
+                body = exc.read().decode("utf-8", errors="replace")
+            except Exception:  # noqa: BLE001
+                pass
+            set_cookie = exc.headers.get("Set-Cookie") if exc.headers else ""
+        last_status = status
+        last_body = body
+        last_set_cookie = set_cookie
+        if status == 200:
+            break
+        if status < 500:
+            break  # 4xx is a real error, no point retrying
+        time.sleep(delay)
+    if last_status != 200:
         raise RuntimeError(
-            f"GET /user/activate returned {status}; body excerpt: {body[:200]!r}"
+            f"GET /user/activate returned {last_status} after {retries} retries; "
+            f"body excerpt: {last_body[:200]!r}"
         )
 
     m = re.search(
         r'<meta\s+name=["\']ol-csrfToken["\']\s+content=["\']([^"\']+)["\']',
-        body,
+        last_body,
     )
     if not m:
         raise RuntimeError(
             f"no ol-csrfToken meta tag in /user/activate HTML; "
-            f"excerpt: {body[:300]!r}"
+            f"excerpt: {last_body[:300]!r}"
         )
     csrf_token = m.group(1)
 
     # Pull the overleaf.sid cookie out of Set-Cookie.
     sid_pair = None
-    for cookie_str in (set_cookie or "").split(", "):
+    for cookie_str in (last_set_cookie or "").split(", "):
         head = cookie_str.split(";", 1)[0].strip()
         if head.startswith("overleaf.sid="):
             sid_pair = head
@@ -297,8 +349,11 @@ def main() -> int:
         print(f"[bootstrap] {CRED_FILE} exists; skipping admin creation")
         return 0
 
-    print("[bootstrap] Waiting for Overleaf web service to be ready")
+    print("[bootstrap] Waiting for Overleaf /login to be ready")
     _wait_for_overleaf_ready()
+
+    print("[bootstrap] Waiting for Overleaf /user/activate to stop 500ing")
+    _wait_for_activation_ready()
 
     # Drop any prior user row with the same email so create-user.mjs
     # doesn't bail with "Email already registered".  Single-tenant
