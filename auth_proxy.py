@@ -428,9 +428,39 @@ class AuthProxyHandler(BaseHTTPRequestHandler):
             and self.path != "/_healthz"
         )
 
-        if is_owner and not has_session and is_html_navigation and is_app_path:
+        # On GET /login the cookie state is by definition stale: the
+        # only reason Overleaf 302's there is that the existing
+        # overleaf.sid (if any) didn't authenticate.  So we ignore
+        # has_session for /login — otherwise an owner whose session
+        # silently expired on the server side keeps their stale
+        # cookie, lands on /login, the dispatcher sees has_session
+        # = True, skips auto-login, and the owner has to sign in by
+        # hand even though they're trusted by the OpenHost router.
+        # All other paths still require the cookie to be missing —
+        # if a fresh sid is present we trust it and let Overleaf
+        # decide.
+        is_login_navigation = (
+            self.path == "/login" or self.path.startswith("/login?")
+        )
+
+        should_auto_login = (
+            is_owner
+            and is_html_navigation
+            and is_app_path
+            and (not has_session or is_login_navigation)
+        )
+        if should_auto_login:
             if self._maybe_auto_login():
                 return
+        elif is_html_navigation and is_app_path:
+            # Diagnostic for debugging owner-SSO breakage.  At INFO
+            # so it shows up in /app_logs/overleaf without flipping
+            # any env knobs.  Logged only for HTML navigations on
+            # app paths to avoid noise from XHR / asset traffic.
+            log.info(
+                "auto-login skipped path=%s is_owner=%s has_session=%s",
+                self.path, is_owner, has_session,
+            )
 
         self._proxy()
 
@@ -457,6 +487,16 @@ class AuthProxyHandler(BaseHTTPRequestHandler):
         parsed = urllib.parse.urlparse(target_path)
         if parsed.scheme or parsed.netloc:
             target_path = "/"
+        # Redirecting back to /login would loop: the user lands on
+        # /login → we mint a session → 302 to /login → owner header
+        # still present, has_session still triggers /login override
+        # (Overleaf may again 302 if cookie is wrong-domain etc.).
+        # Send /login auto-logins to /project (the editor home)
+        # instead.  Same applies to /login?after_logout=true and
+        # similar query strings.
+        login_target = parsed.path.rstrip("/") or "/"
+        if login_target == "/login":
+            target_path = "/project"
 
         try:
             self.send_response(302)
