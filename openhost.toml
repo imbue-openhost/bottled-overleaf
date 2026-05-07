@@ -17,6 +17,7 @@ port = 8080
 # nginx + Node services are ready (can take 60+s).
 health_check = "/_healthz"
 public_paths = [
+    "/_healthz",
     # Overleaf's REST API surface.  Used by the editor UI and by
     # third-party tools (Git integration, Zotero, etc.).
     "/api/",
