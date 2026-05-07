@@ -78,11 +78,14 @@ def _wait_for_overleaf_ready(retries: int = 240, delay: float = 1.0) -> None:
     )
 
 
-def _run_create_user(email: str) -> str:
+def _run_create_user(email: str) -> tuple[str, str]:
     """Run create-user.mjs --admin --email=<email>; parse the
     password-reset URL from stdout.
 
-    Returns the passwordResetToken.
+    Returns (token, full_activation_path) where
+    full_activation_path is the path+query of the URL relative
+    to OVERLEAF_BASE (eg
+    "/user/activate?token=...&user_id=...").
     """
     cmd = [
         "node",
@@ -135,19 +138,25 @@ def _run_create_user(email: str) -> str:
             f"activation URL.  Output:\n{output}"
         )
     url = m.group(0)
-    qs = urllib.parse.parse_qs(urllib.parse.urlparse(url).query)
+    parsed = urllib.parse.urlparse(url)
+    qs = urllib.parse.parse_qs(parsed.query)
     # Activation URL uses "token"; legacy uses "passwordResetToken".
+    token: str | None = None
     for key in ("token", "passwordResetToken"):
         if key in qs and qs[key]:
-            return qs[key][0]
-    raise RuntimeError(
-        f"URL is missing token / passwordResetToken query: {url}"
-    )
+            token = qs[key][0]
+            break
+    if token is None:
+        raise RuntimeError(
+            f"URL is missing token / passwordResetToken query: {url}"
+        )
+    activation_path = parsed.path + ("?" + parsed.query if parsed.query else "")
+    return token, activation_path
 
 
-def _harvest_csrf(activation_url_token: str) -> tuple[str, str]:
-    """GET /user/activate?token=<token>&user_id=<oid> to harvest a
-    CSRF token + the matching session cookie.
+def _harvest_csrf(activation_path: str) -> tuple[str, str]:
+    """GET <activation_path> (e.g. /user/activate?token=<...>&user_id=<oid>)
+    to harvest a CSRF token + the matching session cookie.
 
     Overleaf's set-password POST is CSRF-protected; the token is
     embedded in the activation page's HTML as a <meta
@@ -155,16 +164,9 @@ def _harvest_csrf(activation_url_token: str) -> tuple[str, str]:
     session cookie (overleaf.sid) is set in the response headers.
     Both must be sent together on the subsequent POST.
 
-    We need user_id too — pass the FULL activation URL query
-    string in the GET so Overleaf treats this as a legitimate
-    activation flow.
-
     Returns (csrf_token, session_cookie_header).
     """
-    # We were given just the token value; reconstruct the full
-    # /user/activate URL.  Overleaf accepts "token" as the only
-    # query param; user_id is optional.
-    url = f"{OVERLEAF}/user/activate?token={urllib.parse.quote(activation_url_token)}"
+    url = f"{OVERLEAF}{activation_path}"
     req = urllib.request.Request(url, headers={"Accept": "text/html"})
     opener = urllib.request.build_opener(_NoRedirect())
     try:
@@ -215,15 +217,17 @@ class _NoRedirect(urllib.request.HTTPRedirectHandler):
         return None
 
 
-def _set_password(token: str, password: str) -> None:
+def _set_password(token: str, activation_path: str, password: str) -> None:
     """POST /user/password/set with the reset token.
 
     Overleaf's set-password endpoint requires a CSRF token + the
     matching session cookie (it's part of Overleaf's standard
     csurf middleware on every authenticated POST).  We harvest
-    both from a prior GET /user/activate?token=<token>.
+    both from a prior GET on the activation URL (which already
+    contains the token + user_id, so Overleaf accepts the page
+    visit + sets the session).
     """
-    csrf_token, sid_pair = _harvest_csrf(token)
+    csrf_token, sid_pair = _harvest_csrf(activation_path)
     payload = json.dumps({
         "passwordResetToken": token,
         "password": password,
@@ -303,9 +307,9 @@ def main() -> int:
     _delete_user_if_exists(ADMIN_EMAIL)
 
     password = _generate_password()
-    token = _run_create_user(ADMIN_EMAIL)
+    token, activation_path = _run_create_user(ADMIN_EMAIL)
     print(f"[bootstrap] Got password-reset token; setting password for {ADMIN_EMAIL}")
-    _set_password(token, password)
+    _set_password(token, activation_path, password)
 
     os.makedirs(os.path.dirname(CRED_FILE), exist_ok=True)
     fd = os.open(CRED_FILE, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
