@@ -203,9 +203,18 @@ export OVERLEAF_TELEMETRY_DISABLED=true
 # read-and-write) to grant access without an Overleaf account.
 # This is what makes the Share button's "Anyone with this link
 # can view/edit" URLs actually work for non-owner visitors.
-# Off by default in Overleaf CE; without it, anyone hitting a
-# share URL is told the project is private.
+# Off by default in Overleaf CE.
+#
+# OVERLEAF_ALLOW_PUBLIC_ACCESS removes the catch-all
+# "requireGlobalLogin" middleware that 302s every unauthenticated
+# request to /login.  Without it, even the token-share routes
+# never reach their handler — so OVERLEAF_ALLOW_ANONYMOUS_*
+# alone is not enough.  Per-page requireLogin() middleware still
+# gates /project/list, /project/<id>, /admin, /user/settings,
+# etc.; this only opens publicly-marked routes (the share
+# tokens, /login, /register, /learn).
 export OVERLEAF_ALLOW_ANONYMOUS_READ_AND_WRITE_SHARING=true
+export OVERLEAF_ALLOW_PUBLIC_ACCESS=true
 
 # -----------------------------------------------------------------
 # Launch Overleaf via the upstream /sbin/my_init
