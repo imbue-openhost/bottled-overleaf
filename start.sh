@@ -114,7 +114,7 @@ fi
 # A fresh Mongo 6.0 install defaults to FCV 6.0 already, but on a
 # Mongo 7.0 install it defaults to FCV 7.0 which the check
 # accepts.  Idempotent set just to be safe.
-mongosh --quiet --eval 'db.adminCommand({ setFeatureCompatibilityVersion: "6.0", confirm: true })' 2>/dev/null \
+mongosh --quiet --eval 'db.adminCommand({ setFeatureCompatibilityVersion: "8.0", confirm: true })' 2>/dev/null \
     | sed 's/^/[mongo-fcv] /' || true
 
 # Also tell Overleaf's checks to be lenient if they fail (e.g.

@@ -47,9 +47,9 @@ RUN apt-get update -qq \
         tini \
         gosu \
         redis-server \
- && wget -qO- https://www.mongodb.org/static/pgp/server-6.0.asc \
-        | gpg --dearmor -o /usr/share/keyrings/mongodb-6.gpg \
- && echo "deb [signed-by=/usr/share/keyrings/mongodb-6.gpg] https://repo.mongodb.org/apt/ubuntu jammy/mongodb-org/6.0 multiverse" \
+ && wget -qO- https://www.mongodb.org/static/pgp/server-8.0.asc \
+        | gpg --dearmor -o /usr/share/keyrings/mongodb-8.gpg \
+ && echo "deb [signed-by=/usr/share/keyrings/mongodb-8.gpg] https://repo.mongodb.org/apt/ubuntu jammy/mongodb-org/8.0 multiverse" \
         > /etc/apt/sources.list.d/mongodb.list \
  && apt-get update -qq \
  && apt-get install -y --no-install-recommends \
