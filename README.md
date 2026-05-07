@@ -24,11 +24,34 @@ browser → OpenHost router (subdomain overleaf.<zone>; verifies owner
 3. Captures the rotated `overleaf.sid` cookie + 302s the browser back
    to the original URL with the cookie set.
 
+## Sharing projects with non-owners
+
+Every Overleaf URL is exposed publicly via `public_paths = ["/"]`,
+so the owner can share project links with collaborators who don't
+have OpenHost zone accounts.  Access control inside the app is
+enforced by Overleaf itself (project sharing is link-token-gated;
+project-list is per-user).  Auto-login is gated on the
+`X-OpenHost-Is-Owner` header — only the owner gets the admin
+session minted automatically; everyone else sees Overleaf's normal
+login form.
+
+Flow:
+
+1. Owner shares a project (Share button → invite by email or copy
+   a link-share URL).
+2. Collaborator opens the URL.  No zone_auth → router lets them
+   through (paths are all public).
+3. They land on Overleaf's own login form.  Either sign in to an
+   existing Overleaf account or register one (Overleaf CE allows
+   open registration by default; the owner can lock that down in
+   site-admin settings if they want invitation-only).
+4. They join the project as a normal Overleaf user.
+
 ## Files
 
-  * `openhost.toml` — manifest.  `/_healthz` health check; public
-    paths cover Overleaf's API, login, password-set, static assets,
-    and Socket.io.
+  * `openhost.toml` — manifest.  `/_healthz` health check;
+    everything else exposed publicly so non-owner collaborators
+    can reach Overleaf's own login/register pages.
   * `Dockerfile` — bases on `sharelatex/sharelatex:latest`, adds
     MongoDB 6 + Redis + Python 3.
   * `start.sh` — initialises a single-node Mongo replica set
