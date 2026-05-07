@@ -57,6 +57,7 @@ RUN apt-get update -qq \
         mongodb-org-shell \
         mongodb-org-mongos \
         mongodb-org-tools \
+        mongodb-mongosh \
  && rm -rf /var/lib/apt/lists/*
 
 # Application files.  COPY in rootless podman doesn't always
