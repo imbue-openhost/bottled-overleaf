@@ -54,6 +54,38 @@ if ! mountpoint -q /var/lib/overleaf; then
         rm -rf /var/lib/overleaf
         ln -snf "$OVERLEAF_DATA" /var/lib/overleaf
         echo "[start.sh] Symlinked /var/lib/overleaf -> $OVERLEAF_DATA"
+
+        # The upstream clsi-nginx config sets ``disable_symlinks on``
+        # and serves compile output via ``alias /var/lib/overleaf/...``.
+        # Because /var/lib/overleaf is now a symlink, every path nginx
+        # walks for output files trips the disable_symlinks check and
+        # returns 404 (errno 20: ENOTDIR; nginx error log shows
+        # ``openat() ".../output.pdf" failed (20: Not a directory)``).
+        # The PDF preview pane in the browser shows "PDF Rendering
+        # Error" as a result.
+        #
+        # We can't avoid the symlink (rootless podman = no bind mount)
+        # and we can't replace it with hard links (cross-device for
+        # /data/app_data); the one-line fix is to relax nginx's check
+        # to ``off`` for the CLSI server block.  This is safe in our
+        # deployment because:
+        #   * /var/lib/overleaf is a single operator-controlled symlink
+        #     created at container boot; users have no way to plant
+        #     symlinks under /var/lib/overleaf/data/ from outside the
+        #     container.
+        #   * nginx still confines the served paths via ``alias`` to
+        #     /var/lib/overleaf/data/output/ + content/, and the URL
+        #     regexes only allow [0-9a-f-] in the project / build id
+        #     components, so URL-traversal isn't a concern either.
+        #
+        # We rewrite the file each boot rather than baking the change
+        # into the Dockerfile so we stay in sync with upstream image
+        # updates that bring a fresh clsi-nginx.conf along with them.
+        CLSI_NGINX_CONF="/etc/nginx/sites-enabled/clsi-nginx.conf"
+        if [[ -f "$CLSI_NGINX_CONF" ]] && grep -q "disable_symlinks on" "$CLSI_NGINX_CONF"; then
+            sed -i 's|disable_symlinks on;|disable_symlinks off; # OpenHost: needed because /var/lib/overleaf is a symlink (rootless podman, no bind mount)|' "$CLSI_NGINX_CONF"
+            echo "[start.sh] Patched $CLSI_NGINX_CONF: disable_symlinks on -> off"
+        fi
     fi
 fi
 
