@@ -117,19 +117,18 @@ def _run_create_user(email: str) -> tuple[str, str]:
     # block followed by an activation URL with the shape
     #   https://<host>/user/activate?token=<hex>&user_id=<oid>
     # (older Overleaf 4.x used /user/password/set?passwordResetToken=...).
-    # Match either; the activation flow is the modern one.
+    # The URL appears both in plain stdout AND in a JSON-encoded
+    # log line where it's escaped (\").  Restrict the character
+    # class to what valid URL chars look like — alphanumerics +
+    # the limited punctuation Overleaf actually emits — to avoid
+    # picking up trailing JSON quotes / escapes.
     m = re.search(
-        r"https?://[^\s]+/user/activate\?token=[a-zA-Z0-9._-]+(?:&[^\s]+)?",
+        r"https?://[A-Za-z0-9._\-/]+/user/activate\?token=[A-Za-z0-9._\-]+(?:&user_id=[A-Za-z0-9]+)?",
         output,
     )
     if not m:
         m = re.search(
-            r"https?://[^\s]+/user/password/set\?[^\s]+",
-            output,
-        )
-    if not m:
-        m = re.search(
-            r"https?://[^\s]*(?:passwordResetToken|token)=[a-zA-Z0-9._-]+[^\s]*",
+            r"https?://[A-Za-z0-9._\-/]+/user/password/set\?passwordResetToken=[A-Za-z0-9._\-]+(?:&[A-Za-z0-9.=&_\-]+)?",
             output,
         )
     if not m:
