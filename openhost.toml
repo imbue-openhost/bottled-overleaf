@@ -35,12 +35,19 @@ health_check = "/_healthz"
 #      OR copy a link-share URL).
 #   2. Collaborator opens the URL.  No zone_auth → OpenHost
 #      router lets them through (paths are all public).
-#   3. They land on Overleaf's login form.  Either they sign in
-#      to an existing Overleaf account, or they register one
-#      (Overleaf CE allows open registration by default; the
-#      owner can lock that down in the site-admin settings if
-#      they want invitation-only).
-#   4. They get added to the project as a normal Overleaf user.
+#   3a. (Anonymous link share) The visitor is granted access
+#       directly by Overleaf's TokenAccess endpoint without
+#       needing an Overleaf account at all.  Requires
+#       OVERLEAF_ALLOW_ANONYMOUS_READ_AND_WRITE_SHARING=true
+#       (set in start.sh).
+#   3b. (Email invite) The visitor lands on Overleaf's /login.
+#       If they don't have an account yet, the owner creates
+#       one for them via /admin/register (Overleaf CE has no
+#       open self-signup — the public /register page is just a
+#       static "contact admin" notice).
+#   4. They join the project as a normal Overleaf user (3b) or
+#      as an anonymous collaborator scoped to that one project
+#      (3a).
 public_paths = ["/"]
 
 [resources]

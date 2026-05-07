@@ -35,17 +35,31 @@ project-list is per-user).  Auto-login is gated on the
 session minted automatically; everyone else sees Overleaf's normal
 login form.
 
-Flow:
+Two flavors of sharing:
 
-1. Owner shares a project (Share button → invite by email or copy
-   a link-share URL).
-2. Collaborator opens the URL.  No zone_auth → router lets them
-   through (paths are all public).
-3. They land on Overleaf's own login form.  Either sign in to an
-   existing Overleaf account or register one (Overleaf CE allows
-   open registration by default; the owner can lock that down in
-   site-admin settings if they want invitation-only).
-4. They join the project as a normal Overleaf user.
+**Anonymous link sharing** (Share → "Anyone with this link
+can view/edit"): no Overleaf account required.  Enabled by
+`OVERLEAF_ALLOW_ANONYMOUS_READ_AND_WRITE_SHARING=true` (set in
+`start.sh`).
+
+1. Owner clicks Share → "Anyone with this link" → "Editor" or
+   "Viewer".  Copies the URL Overleaf generates.
+2. Collaborator opens the URL.  Overleaf's TokenAccess
+   controller mints them an anonymous session scoped to that
+   one project; they can edit or view immediately.
+
+**Email invite to a named user**: requires the collaborator to
+have an Overleaf account on this instance.  Overleaf CE has no
+open self-signup — the public `/register` page is a static
+"contact admin" notice, not a form.  The owner creates accounts
+via `/admin/register` (admin-only):
+
+1. Owner visits `/admin/register`, enters the collaborator's
+   email, gets back a one-time `setNewPasswordUrl`.
+2. Owner sends that URL to the collaborator.  They click it,
+   set a password, and now have an Overleaf account.
+3. Owner shares the project with that account via the Share
+   button → "Add people".
 
 ## Files
 
