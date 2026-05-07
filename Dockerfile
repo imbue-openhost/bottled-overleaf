@@ -71,6 +71,6 @@ RUN chmod 0755 /opt/openhost-overleaf/start.sh \
 
 # OpenHost-routed port (auth-proxy).  Overleaf's own port (80)
 # remains loopback-only.
-EXPOSE 8080
+EXPOSE 8090
 
 ENTRYPOINT ["/usr/bin/tini", "--", "/opt/openhost-overleaf/start.sh"]

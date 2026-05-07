@@ -186,8 +186,8 @@ MYINIT_PID=$!
 # /_healthz starts succeeding as soon as the proxy is up.
 # -----------------------------------------------------------------
 
-echo "[start.sh] Starting auth-proxy on 0.0.0.0:8080 -> 127.0.0.1:80"
-export AUTH_PROXY_LISTEN_PORT="8080"
+echo "[start.sh] Starting auth-proxy on 0.0.0.0:8090 -> 127.0.0.1:80"
+export AUTH_PROXY_LISTEN_PORT="8090"
 export AUTH_PROXY_UPSTREAM_HOST="127.0.0.1"
 export AUTH_PROXY_UPSTREAM_PORT="80"
 export AUTH_PROXY_CRED_FILE="$CRED_FILE"
