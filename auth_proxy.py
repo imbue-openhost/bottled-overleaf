@@ -373,18 +373,32 @@ class AuthProxyHandler(BaseHTTPRequestHandler):
         is_html_navigation = (
             self.command == "GET" and "text/html" in accept.lower()
         )
-        # Don't auto-login on /login itself, /api/* (Git integration etc.),
-        # /socket.io/* (real-time), or static assets.
+        # Skip auto-login on machine-consumed paths (the editor's
+        # XHR API, the real-time websocket handshake, static assets,
+        # and the proxy's own /_healthz).  Notably we DO auto-login
+        # on GET /login: Overleaf 302's there after a session expiry
+        # or an explicit logout, and the whole point of the SSO is
+        # that the owner shouldn't have to click "sign in" — when
+        # they land there, mint a fresh session and redirect them
+        # back to the editor.
+        #
+        # Auto-login is only triggered for the OpenHost-router-stamped
+        # owner; it never fires for unauthenticated visitors (they
+        # hit the OpenHost router's own /login page first), so this
+        # path doesn't expose the Overleaf admin to the public.
         is_app_path = (
-            not self.path.startswith("/login")
-            and not self.path.startswith("/api/")
+            not self.path.startswith("/api/")
             and not self.path.startswith("/socket.io/")
             and not self.path.startswith("/javascripts/")
             and not self.path.startswith("/stylesheets/")
             and not self.path.startswith("/fonts/")
             and not self.path.startswith("/img/")
             and not self.path.startswith("/assets/")
+            and not self.path.startswith("/js/")
+            and not self.path.startswith("/css/")
             and self.path != "/favicon.ico"
+            and self.path != "/favicon.svg"
+            and self.path != "/_healthz"
         )
 
         if is_owner and not has_session and is_html_navigation and is_app_path:
