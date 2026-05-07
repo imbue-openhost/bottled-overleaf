@@ -196,9 +196,11 @@ def _login_to_overleaf(
         # Capture the initial overleaf.sid cookie — Overleaf binds
         # the CSRF token to this session so we MUST send the same
         # cookie on the POST.
-        initial_set_cookie = resp.getheader("Set-Cookie") or ""
+        initial_raw_cookies = [
+            v for k, v in resp.getheaders() if k.lower() == "set-cookie"
+        ]
         sid_cookie_pair = None
-        for cookie_str in _split_set_cookie(initial_set_cookie):
+        for cookie_str in initial_raw_cookies:
             head = cookie_str.split(";", 1)[0].strip()
             if head.startswith(OVERLEAF_SID_COOKIE + "="):
                 sid_cookie_pair = head
@@ -206,9 +208,9 @@ def _login_to_overleaf(
         if sid_cookie_pair is None:
             log.warning(
                 "auto-login: GET /login response missing %s Set-Cookie "
-                "(initial Set-Cookie: %r)",
+                "(raw Set-Cookies: %r)",
                 OVERLEAF_SID_COOKIE,
-                initial_set_cookie[:200],
+                initial_raw_cookies,
             )
             conn.close()
             return None
@@ -281,9 +283,16 @@ def _login_to_overleaf(
     # Capture the rotated overleaf.sid cookie.  Express-session's
     # default behaviour is to regenerate the sid on login; the new
     # cookie is in the response headers.
-    set_cookie = resp.getheader("Set-Cookie") or ""
+    #
+    # Use getheaders() rather than getheader("Set-Cookie") to
+    # preserve individual Set-Cookie lines — getheader() folds
+    # repeated headers with ", " which breaks the splitter when
+    # NextAuth-like Expires=... attributes contain commas.
+    raw_set_cookies = [
+        v for k, v in resp.getheaders() if k.lower() == "set-cookie"
+    ]
     rotated_cookie = None
-    for cookie_str in _split_set_cookie(set_cookie):
+    for cookie_str in raw_set_cookies:
         head = cookie_str.split(";", 1)[0].strip()
         if head.startswith(OVERLEAF_SID_COOKIE + "="):
             # We want the WHOLE cookie line (with attributes like
@@ -293,8 +302,10 @@ def _login_to_overleaf(
             break
     if rotated_cookie is None:
         log.warning(
-            "auto-login: POST /login 200 but no rotated %s in Set-Cookie",
+            "auto-login: POST /login 200 but no rotated %s in Set-Cookie "
+            "(raw Set-Cookies: %r)",
             OVERLEAF_SID_COOKIE,
+            raw_set_cookies,
         )
         return None
     return rotated_cookie
