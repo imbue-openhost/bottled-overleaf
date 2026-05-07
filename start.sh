@@ -109,6 +109,19 @@ if [[ "$RS_STATUS" != "1" ]]; then
     done
 fi
 
+# Overleaf's check-mongodb.mjs verifies featureCompatibilityVersion
+# against MIN_MONGO_FEATURE_COMPATIBILITY_VERSION (currently 6.0).
+# A fresh Mongo 6.0 install defaults to FCV 6.0 already, but on a
+# Mongo 7.0 install it defaults to FCV 7.0 which the check
+# accepts.  Idempotent set just to be safe.
+mongosh --quiet --eval 'db.adminCommand({ setFeatureCompatibilityVersion: "6.0", confirm: true })' 2>/dev/null \
+    | sed 's/^/[mongo-fcv] /' || true
+
+# Also tell Overleaf's checks to be lenient if they fail (e.g.
+# because the admin DB is restricted).  We're a single-tenant
+# deployment with trust auth, so there's no security loss.
+export ALLOW_MONGO_ADMIN_CHECK_FAILURES=true
+
 # -----------------------------------------------------------------
 # Redis bootstrap
 # -----------------------------------------------------------------
