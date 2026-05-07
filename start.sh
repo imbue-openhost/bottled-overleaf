@@ -199,6 +199,13 @@ export DOCKER_RUNNER=false
 export EMAIL_CONFIRMATION_DISABLED=true
 # Don't auto-tell upstream we exist.
 export OVERLEAF_TELEMETRY_DISABLED=true
+# Allow Overleaf's anonymous link-share tokens (read-only and
+# read-and-write) to grant access without an Overleaf account.
+# This is what makes the Share button's "Anyone with this link
+# can view/edit" URLs actually work for non-owner visitors.
+# Off by default in Overleaf CE; without it, anyone hitting a
+# share URL is told the project is private.
+export OVERLEAF_ALLOW_ANONYMOUS_READ_AND_WRITE_SHARING=true
 
 # -----------------------------------------------------------------
 # Launch Overleaf via the upstream /sbin/my_init
