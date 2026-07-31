@@ -98,6 +98,10 @@ Everything lives under `$OPENHOST_APP_DATA_DIR/`:
   * `redis/`  — Redis dir (no on-disk persistence; just for pidfile +
     logfile).
   * `admin-credentials.txt` — admin email + password (mode 0600).
+  * `secrets.env` — persistent Overleaf signing secrets, mode 0600.
+    Currently holds `OVERLEAF_INVITE_TOKEN_SECRET`, which newer Overleaf
+    CE images require to be a stable random value across restarts;
+    generated once on first boot and re-sourced every boot.
 
 ## Caveats
 
