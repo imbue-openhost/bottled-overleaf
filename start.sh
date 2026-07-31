@@ -216,6 +216,26 @@ export OVERLEAF_TELEMETRY_DISABLED=true
 export OVERLEAF_ALLOW_ANONYMOUS_READ_AND_WRITE_SHARING=true
 export OVERLEAF_ALLOW_PUBLIC_ACCESS=true
 
+# Newer Overleaf CE images ship /etc/my_init.d/000_check_missing_secrets.sh,
+# which refuses to start (exit 101, killing the container) unless
+# OVERLEAF_INVITE_TOKEN_SECRET is set.  Upstream requires it to be a
+# persistent random value kept stable across restarts/upgrades:
+# regenerating it invalidates invite/share tokens already stored in the
+# database.  We therefore generate it once on first boot and persist it
+# under the app data dir, re-exporting the same value on every subsequent
+# boot.  The file is mode 0600 since it is a signing secret.
+SECRETS_FILE="$PERSIST/secrets.env"
+if [[ ! -f "$SECRETS_FILE" ]]; then
+    umask 077
+    {
+        echo "OVERLEAF_INVITE_TOKEN_SECRET=$(openssl rand -base64 32)"
+    } > "$SECRETS_FILE"
+    chmod 0600 "$SECRETS_FILE"
+    echo "[start.sh] Generated persistent Overleaf secrets at $SECRETS_FILE"
+fi
+# shellcheck disable=SC1090
+set -a; source "$SECRETS_FILE"; set +a
+
 # -----------------------------------------------------------------
 # Launch Overleaf via the upstream /sbin/my_init
 # -----------------------------------------------------------------
