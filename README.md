@@ -1,6 +1,6 @@
-# openhost-overleaf
+# bottled-overleaf
 
-Overleaf Community Edition (online LaTeX editor) packaged for OpenHost
+Overleaf Community Edition (online LaTeX editor) packaged for Cloud in a Bottle
 with one-click owner SSO via Pattern B (auto-login sidecar).
 
 ## Topology
@@ -28,7 +28,7 @@ browser → OpenHost router (subdomain overleaf.<zone>; verifies owner
 
 Every Overleaf URL is exposed publicly via `public_paths = ["/"]`,
 so the owner can share project links with collaborators who don't
-have OpenHost zone accounts.  Access control inside the app is
+have Cloud in a Bottle zone accounts.  Access control inside the app is
 enforced by Overleaf itself (project sharing is link-token-gated;
 project-list is per-user).  Auto-login is gated on the
 `X-OpenHost-Is-Owner` header — only the owner gets the admin
@@ -109,9 +109,9 @@ Everything lives under `$OPENHOST_APP_DATA_DIR/`:
     several Node services (web, clsi, document-updater, real-time,
     contacts, notifications, history, etc.).  First boot can take
     90+s; `/_healthz` returns 200 from the auth-proxy immediately so
-    OpenHost's healthcheck doesn't fail.
+    Cloud in a Bottle's healthcheck doesn't fail.
   * **No sandboxed compiles.**  `SANDBOXED_COMPILES=false` because we
-    can't easily run docker-in-docker inside the OpenHost rootless
+    can't easily run docker-in-docker inside the Cloud in a Bottle rootless
     podman runtime.  The Community Edition runs the LaTeX compiler
     in the same container; safe for single-tenant use but not for
     sharing with untrusted users.
