@@ -1,7 +1,7 @@
 [app]
 name = "overleaf"
 version = "0.1.0"
-description = "Overleaf Community Edition (online LaTeX editor) packaged for OpenHost.  Bundles MongoDB + Redis in-container; the OpenHost zone owner is auto-signed-in to the Overleaf admin via an auth-proxy that mints an Overleaf session against the bootstrap-generated admin credentials."
+description = "Overleaf Community Edition (online LaTeX editor) packaged for Cloud in a Bottle.  Bundles MongoDB + Redis in-container; the Cloud in a Bottle zone owner is auto-signed-in to the Overleaf admin via an auth-proxy that mints an Overleaf session against the bootstrap-generated admin credentials."
 authors = ["Andrew Laack <andrew@laack.co>"]
 
 [runtime.container]
